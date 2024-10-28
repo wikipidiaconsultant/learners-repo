@@ -1,1 +1,5 @@
+<<<<<<< HEAD
 print("HelloWorld")
+=======
+print("HelloWorld")
+>>>>>>> 860b324257d299b6f05cc70265a266c03db3b815
