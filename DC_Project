@@ -4,3 +4,191 @@ df.head()
 
 
 
+
+
+df.info()
+
+
+
+
+#1
+df['Salary Estimate'] = df['Salary Estimate'].str.replace('[£\$€₹]', '',regex=True)
+df['Salary Estimate']=df['Salary Estimate'].str.replace("K","000")
+
+df.head()
+
+
+df['Salary Type'] = df['Salary Estimate'].apply(lambda x: 'per hour' if 'per hour' in x.lower() else ('per year' if 'per year' in x.lower() else ('per day' if 'per day' in x.lower() else 'per year')))
+df.head()
+
+
+
+
+
+#2
+import re
+def remove_special_char(Text):
+  cleaned_text=re.sub(r"[^a-zA-Z0-9]","",Text)
+  cleaned_text=re.sub(r"\s+","",cleaned_text)
+  return cleaned_text
+
+  
+  df["Job Description"]=df["Job Description"].apply(remove_special_char)
+
+  
+  df["Company Name"]=df["Company Name"].apply(remove_special_char)
+
+
+
+
+
+  df.head()
+
+df["Job Description"]=df["Job Description"].str.replace("\n",' ',regex=True).str.replace("\t","",regex=True).str.replace("\r","",regex=True)
+df["Company Name"]=df["Company Name"].str.replace("\n",' ',regex=True).str.replace("\t","",regex=True).str.replace("\r","",regex=True)
+df.head()
+
+df=df.apply(lambda x:x.str.lower() if x.dtype=='object' else x)
+df.head()
+
+
+
+#3
+df["Company Name"] = df.apply(lambda x: x["Company Name"].replace(str(x["Rating"]), "", 1) if str(x["Rating"]) in x["Company Name"] else x["Company Name"], axis=1)
+
+company_ids = {}
+def create_company_id(company_name):
+  if company_name not in company_ids:
+    company_ids[company_name]=len(company_ids)+1
+  return company_ids[company_name]
+
+  
+  
+
+df["Company ID"]=df["Company Name"].apply(create_company_id)
+df.tail()
+
+#4
+us_state_abbrev = {
+    'AL': 'Alabama', 'AK': 'Alaska', 'AZ': 'Arizona', 'AR': 'Arkansas', 'CA': 'California',
+    'CO': 'Colorado', 'CT': 'Connecticut', 'DE': 'Delaware', 'DC': 'District of Columbia',
+    'FL': 'Florida', 'GA': 'Georgia', 'HI': 'Hawaii', 'ID': 'Idaho', 'IL': 'Illinois',
+    'IN': 'Indiana', 'IA': 'Iowa', 'KS': 'Kansas', 'KY': 'Kentucky', 'LA': 'Louisiana',
+    'ME': 'Maine', 'MD': 'Maryland', 'MA': 'Massachusetts', 'MI': 'Michigan',
+    'MN': 'Minnesota', 'MS': 'Mississippi', 'MO': 'Missouri', 'MT': 'Montana',
+    'NE': 'Nebraska', 'NV': 'Nevada', 'NH': 'New Hampshire', 'NJ': 'New Jersey',
+    'NM': 'New Mexico', 'NY': 'New York', 'NC': 'North Carolina', 'ND': 'North Dakota',
+    'OH': 'Ohio', 'OK': 'Oklahoma', 'OR': 'Oregon', 'PA': 'Pennsylvania',
+    'RI': 'Rhode Island', 'SC': 'South Carolina', 'SD': 'South Dakota', 'TN': 'Tennessee',
+    'TX': 'Texas', 'UT': 'Utah', 'VT': 'Vermont', 'VA': 'Virginia',
+    'WA': 'Washington', 'WV': 'West Virginia', 'WI': 'Wisconsin', 'WY': 'Wyoming'
+}
+
+df["Location"]=df["Location"].apply(lambda x:', '.join([x.split(', ')[0],us_state_abbrev.get(x.upper().split(', ')[1],x.split(', ')[1])]) if len(x.split(', '))>1 else (x if x else ' ') )
+
+
+
+df["Headquarters"]=df["Headquarters"].apply(lambda x:', '.join([x.split(', ')[0],us_state_abbrev.get(x.upper().split(', ')[1],x.split(', ')[1])]) if len(x.split(', '))>1 else (x if x else ' ') )
+df=df.apply(lambda x:x.str.lower() if x.dtype=='object' else x)
+df.tail()
+
+
+
+
+
+
+!pip install pycountry
+
+!pip install geocoder
+!pip install haversine
+import arcgis
+import geocoder
+import haversine as hs
+import time
+
+def calculate_distance(row):
+    location = row['Location']
+    headquarters = row['Headquarters']
+    
+    # Geocode location and headquarters using ArcGIS
+    try:
+        location_coords = geocoder.arcgis(location, timeout=10).latlng 
+        time.sleep(1)  # Pause for 1 second between requests
+        hq_coords = geocoder.arcgis(headquarters, timeout=10).latlng
+    except Exception as e:
+        print(f"Error geocoding {location} or {headquarters}: {e}")
+        return None
+    
+    if location_coords and hq_coords:
+        # Calculate distance using haversine formula (in miles)
+        distance = hs.haversine(location_coords, hq_coords, unit=hs.Unit.MILES)
+        return distance
+    else:
+        return None  # Handle cases where geocoding fails
+
+# Apply distance calculation to the DataFrame
+df['Distance'] = df.apply(calculate_distance, axis=1)
+
+# Identify remote positions (e.g., distance > 50 miles)
+df['Remote'] = df['Distance'] > 50
+
+df.head()
+
+df["Remote"] = df["Remote"].apply(lambda x: "yes" if x else "no")
+df.head()
+
+df["Revenue"] = df["Revenue"].str.replace("unknown / non-applicable", "", regex=True)
+
+
+
+
+pattern = r'\$(\d+([.,]\d+)?)\s*[-–—to]+\s*\$?(\d+([.,]\d+)?)?\s*(million|billion)?'
+
+
+revenue_df = df['Revenue'].str.extract(pattern, flags=re.IGNORECASE)
+
+revenue_df.columns = ['MinRevenue_Str', 'MinRevenue_Decimal', 'MaxRevenue_Str', 'MaxRevenue_Decimal', 'Unit']
+
+revenue_df['MinRevenue'] = pd.to_numeric(revenue_df['MinRevenue_Str'].str.replace(',', ''))
+revenue_df['MaxRevenue'] = pd.to_numeric(revenue_df['MaxRevenue_Str'].str.replace(',', ''))
+
+revenue_df.loc[revenue_df['Unit'].str.lower() == 'billion', ['MinRevenue', 'MaxRevenue']] *= 1000
+
+df = df.merge(revenue_df[['MinRevenue', 'MaxRevenue']], left_index=True, right_index=True)
+
+df["MinRevenue"] = df["MinRevenue"].astype(str).str.replace(r"\.0$", "k", regex=True)
+df["MaxRevenue"] = df["MaxRevenue"].astype(str).str.replace(r"\.0$", "k", regex=True)
+df.head()
+
+def convert_to_usd_apply(revenue_str):
+    
+    revenue_str = str(revenue_str) 
+    
+    currency_rates = {'$': 1, '£': 1.25, '€': 1.10, "₹":0.012}  
+
+    
+    match = re.search(r'([\£€₹])?(\d+([.,]\d+)?)', revenue_str)
+    if match:
+        currency = match.group(1) or '$' 
+        amount = match.group(2).replace(',', '')
+
+        if currency in currency_rates:
+            converted_amount = amount * currency_rates[currency]
+            return converted_amount
+        else:
+            return revenue_str  
+    else:
+        return revenue_str
+
+
+df['Revenue'] = df['Revenue'].apply(convert_to_usd_apply)
+df['MinRevenue'] = df['MinRevenue'].apply(convert_to_usd_apply)
+df['MaxRevenue'] = df['MaxRevenue'].apply(convert_to_usd_apply)
+
+df.head(632)
+
+import numpy as np  
+
+df['Revenue'].fillna(value=np.nan, inplace=True) 
+df.head()
+
